@@ -48,6 +48,10 @@ class Settings(BaseModel):
     version: str = Field(default="0.1.0")
     environment: str = Field(default_factory=lambda: os.getenv("APP_ENV", "local"))
 
+    BANK_NAME: Optional[str] = Field(
+        default_factory=lambda: os.getenv("BANK_NAME")
+    )
+
     azure_openai_endpoint: Optional[str] = Field(
         default_factory=lambda: os.getenv("AZURE_OPENAI_ENDPOINT")
     )

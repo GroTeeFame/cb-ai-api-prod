@@ -6,55 +6,26 @@ from typing import Any, Dict, Iterable, List
 
 from app.schemas.state import ConversationState
 
+from .operator import OPERATOR_TOOLS, connect_with_operator
+
 # from .balance import BALANCE_TOOLS, lookup_client_balances, lookup_total_balance
-from .balance import BALANCE_TOOLS, get_balance, get_specific_balance
-from .currency import CURRENCY_TOOLS, get_exchange, get_specific_exchange
-from .statement import STATEMENT_TOOLS, get_client_accounts_info, get_statement
 from .info import INFO_TOOLS, get_bank_info
 from .types import ToolExecutionResult
-
 
 class UnknownToolError(Exception):
     """Raised when an LLM requests an unknown tool."""
 
 
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "get_exchange": {
-        "schema": CURRENCY_TOOLS[0],
-        "executor": get_exchange,
-    },
-    "get_specific_exchange": {
-        "schema": CURRENCY_TOOLS[1],
-        "executor": get_specific_exchange
-    },
-    "get_balance": {
-        "schema": BALANCE_TOOLS[0],
-        "executor": get_balance,
-    },
-    "get_specific_balance": {
-        "schema": BALANCE_TOOLS[1],
-        "executor": get_specific_balance
-    },
-    "get_client_accounts_info": {
-        "schema": STATEMENT_TOOLS[0],
-        "executor": get_client_accounts_info,
-    },
-    "get_statement": {
-        "schema": STATEMENT_TOOLS[1],
-        "executor": get_statement,
-    },
     "get_bank_info": {
         "schema": INFO_TOOLS[0],
         "executor": get_bank_info
-    }
-    # "lookup_client_balances": {
-    #     "schema": BALANCE_TOOLS[0],
-    #     "executor": lookup_client_balances,
-    # },
-    # "lookup_total_balance": {
-    #     "schema": BALANCE_TOOLS[1],
-    #     "executor": lookup_total_balance,
-    # },
+    },
+    "connect_with_operator": {
+        "schema": OPERATOR_TOOLS[0],
+        "executor": connect_with_operator
+    },
+
 }
 
 

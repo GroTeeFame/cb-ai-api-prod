@@ -34,4 +34,4 @@ Thumbs.db
 # Local data & logs
 *.log
 tmp/
-
+.other/

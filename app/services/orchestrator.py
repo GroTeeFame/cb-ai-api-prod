@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -15,6 +16,9 @@ from app.tools import (
     tool_schemas,
     UnknownToolError,
 )
+
+from app.core.config import settings
+
 from app.tools.types import ToolExecutionResult
 
 logger = logging.getLogger(__name__)
@@ -31,16 +35,89 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are a compliant digital banking assistant serving retail clients in Ukraine. "
+    f"You are chatbot for {settings.BANK_NAME}. "
+    "Right now your purpose is to give information about bank. "
+    "You are can't make any changes to user bank account, you only can give them answers on question about bank or connect them with human operator. "
+    "If you can't answer to user question, or user wanted to talk with human, use tool to connect customer with human operator. "
     "Respond only using Ukrainian language. "
+    "If user question unrelated to our bank, politely decline user question and remind to user that you a 'bank' chatbot that can help only with question about our bank. "
     "If the request requires back-end actions, decide whether to call an available tool. "
     "Never invent account information. When unsure, ask follow-up questions. "
     "If the user asks about bank branches, first ask which city they are looking for. "
     "If user ask same question/information about his bank account, and you already have it in history or memory, don't use those info, always use tools to get most recent information."
     "When tools are available, prefer calling them immediately over promising future actions. "
-    "For bank statements/extracts: if accountid is unknown, call get_client_accounts_info to fetch accounts, then choose the correct account (by currency/IBAN fragment) and call get_statement with accountid and date range in the SAME turn. If you have all the info to use statement tool, prompt user with all the info to get permission to use tool. "
-    "Do not use future dates for statements. If the user requests a future date range, ask them to provide a valid period up to today."
     "If the user only expresses thanks/acknowledgment without a new request, reply politely and do not call tools. "
+    
+    # "Your scope is strictly limited to bank-related informational questions. "
+    # "You cannot change user accounts or perform account operations. "
+    # "Respond only in Ukrainian. "
+    # "If the user asks for a human operator, immediately call tool connect_with_operator. "
+    # "If the request is outside banking topics, do not answer it yourself and immediately call tool connect_with_operator. "
+    # "If you are unsure whether a request is banking-related, treat it as out-of-scope and call connect_with_operator. "
+    # "For bank-related questions, use available tools and never invent facts. "
+    # "If user asks about bank branches, first ask which city they are looking for. "
+    # "If the user only says thanks/acknowledgment without a new request, reply politely and do not call tools. "
 )
+
+# ACK_ONLY_TOKENS = {
+#     "дякую",
+#     "спасибі",
+#     "ок",
+#     "окей",
+#     "добре",
+#     "чудово",
+#     "зрозуміло",
+#     "thanks",
+#     "thank",
+#     "you",
+#     "thx",
+#     "ok",
+#     "okay",
+#     "got",
+#     "it",
+# }
+
+# OPERATOR_REQUEST_KEYWORDS = (
+#     "оператор",
+#     "менеджер",
+#     "людин",
+#     "фахівц",
+#     "human", 
+#     "agent",
+#     "support",
+# ) 
+
+# BANK_DOMAIN_KEYWORDS = (
+#     "банк",
+#     "bank",
+#     "відділен",
+#     "branch",
+#     "банкомат",
+#     "atm",
+#     "рахунок",
+#     "account",
+#     "карта",
+#     "card",
+#     "кредит",
+#     "депозит",
+#     "коміс",
+#     "тариф",
+#     "платіж",
+#     "переказ",
+#     "iban",
+#     "swift",
+#     "валют",
+#     "курс",
+#     "обмін",
+#     "підтримк",
+#     "контакт",
+#     "телефон",
+#     "гаряча",
+#     "каса",
+#     "відсот",
+#     "ліміт",
+#     "відділення",
+# )
 
 
 class LLMOrchestrator:
@@ -69,6 +146,15 @@ class LLMOrchestrator:
             self._append_user_message(state, payload)
             completion = await self._invoke_llm(payload, state)
             agent_reply = await self._build_agent_reply(payload, completion, state)
+            # if self._should_force_operator_handoff(payload.text):
+            #     logger.info(
+            #         "Request detected as out-of-scope for bank info. "
+            #         "Forcing connect_with_operator tool."
+            #     )
+            #     agent_reply = self._emit_operator_handoff(state)
+            # else:
+            #     completion = await self._invoke_llm(payload, state)
+            #     agent_reply = await self._build_agent_reply(payload, completion, state)
         except Exception as exc:  # pragma: no cover - defensive fallback
             logger.exception("LLM orchestration failed for chat_id=%s", payload.chat_id)
             agent_reply = self._fallback_reply(state, error=exc)
@@ -132,6 +218,50 @@ class LLMOrchestrator:
             entrypoint="direct_answer",
         )
         return result
+
+    # def _emit_operator_handoff(self, state: ConversationState) -> AgentReply:
+    #     """Execute handoff tool and convert the result to AgentReply."""
+    #     language = state.language or self._default_language
+    #     result = execute_tool(
+    #         name="connect_with_operator",
+    #         arguments="{}",
+    #         state=state,
+    #         language=language,
+    #     )
+    #     return AgentReply(
+    #         event=result.event or "send",
+    #         data=result.data or "",
+    #         context_updates=result.context_updates or {},
+    #     )
+
+    # def _should_force_operator_handoff(self, user_text: str) -> bool:
+    #     """
+    #     Force handoff for requests outside bank-information scope.
+    #     """
+    #     normalized = self._normalize_text(user_text)
+    #     if not normalized:
+    #         return False
+    #     if self._is_ack_only(normalized):
+    #         return False
+    #     if any(keyword in normalized for keyword in OPERATOR_REQUEST_KEYWORDS):
+    #         return True
+    #     return not self._is_bank_related(normalized)
+
+    # @staticmethod
+    # def _normalize_text(text: str) -> str:
+    #     normalized = re.sub(r"[^0-9a-zа-яіїєґ'\s]+", " ", (text or "").lower())
+    #     return " ".join(normalized.split())
+
+    # @staticmethod
+    # def _is_ack_only(normalized_text: str) -> bool:
+    #     tokens = normalized_text.split()
+    #     if not tokens or len(tokens) > 5:
+    #         return False
+    #     return all(token in ACK_ONLY_TOKENS for token in tokens)
+
+    # @staticmethod
+    # def _is_bank_related(normalized_text: str) -> bool:
+    #     return any(keyword in normalized_text for keyword in BANK_DOMAIN_KEYWORDS)
 
     async def _invoke_llm(
         self, payload: ChatbotMessage, state: ConversationState
